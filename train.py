@@ -20,12 +20,14 @@ warmup_iterations = 2000
 decay_iterations = 60000
 max_iterations = 60000
 testing_interval = 1000
+dropout = 0.1
 
 with open('meta.pkl', 'rb') as f:
     pkl = pickle.load(f)
     vocab_size = pkl['size']
     char2idx = pkl['cti']
     idx2char = pkl['itc']
+
 
 train_idx = np.memmap('train.bin', dtype=np.uint16)
 val_idx = np.memmap('test.bin', dtype=np.uint16)
@@ -34,16 +36,26 @@ def get_batch(split='train'):
     data = train_idx if split == 'train' else val_idx
     rand = torch.randint(low=0, high=len(train_idx) - block_size, size=(batch_size,))
 
-    x = torch.stack([torch.from_numpy((train_idx[x: x+block_size]).astype(np.int64)) for x in rand])
-    y = torch.stack([torch.from_numpy((train_idx[x+1: x+block_size+1]).astype(np.int64)) for x in rand])
+    x = torch.stack([torch.from_numpy((data[x: x+block_size]).astype(np.int64)) for x in rand])
+    y = torch.stack([torch.from_numpy((data[x+1: x+block_size+1]).astype(np.int64)) for x in rand])
 
     x = x.to(device)
     y = y.to(device)
 
     return x,y
 
+config = model.ModelConfig(
+    vocab_size,
+    embedding_dim,
+    block_size,
+    n_layers,
+    internal_dim,
+    n_heads,
+    dropout,
+    device
+)
 
-model = model.GPT(vocab_size=vocab_size, embedding_dim=embedding_dim, block_size=block_size, n_layers=n_layers, internal_dim=internal_dim, n_heads=n_heads)
+model = model.GPT(config)
 model.to(device)
 print(model)
 
@@ -52,7 +64,6 @@ prompt_tokens = [char2idx[c] for c in prompt]
 
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-
 
 def get_learning_rate(iteration):
     # Cosine decay with warmup. Think this is correct :) 

@@ -2,12 +2,26 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from dataclasses import dataclass
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+@dataclass
+class ModelConfig:
+    vocab_size: int
+    embedding_dim: int
+    block_size: int
+    n_layers: int
+    internal_dim: int
+    n_heads: int
+    dropout: int = 0.1
+    device: str = 'cuda'
 
 class SelfAttention(nn.Module):
-    def __init__(self, block_size, embedding_dim, n_heads):
+    def __init__(self, config):
         super().__init__()
+
+        embedding_dim = config.embedding_dim
+        block_size = config.block_size
+        n_heads = config.n_heads
 
         self.k = nn.Linear(embedding_dim, embedding_dim)
         self.q = nn.Linear(embedding_dim, embedding_dim)
@@ -17,7 +31,7 @@ class SelfAttention(nn.Module):
                                     .view(1, 1, block_size, block_size))
 
         #output projection
-        self.w = nn.Linear(embedding_dim, embedding_dim )
+        self.w = nn.Linear(embedding_dim, embedding_dim)
 
         self.n_heads = n_heads
         self.dim = embedding_dim
@@ -40,7 +54,7 @@ class SelfAttention(nn.Module):
         return y
         
 class DecoderBlock(nn.Module):
-    def __init__(self, block_size, embedding_dim, internal_dim, n_heads, dropout):
+    def __init__(self, config):
         super().__init__()
         '''
         Components of decoder block
@@ -49,17 +63,17 @@ class DecoderBlock(nn.Module):
         3. layer normalization
         '''
         
-        self.attention = SelfAttention(block_size, embedding_dim, n_heads)
+        self.attention = SelfAttention(config)
 
         self.mlp = nn.Sequential(
-            nn.Linear(embedding_dim, internal_dim),
+            nn.Linear(config.embedding_dim, config.internal_dim),
             nn.GELU(),
-            nn.Linear(internal_dim, embedding_dim),
-            nn.Dropout(dropout)
+            nn.Linear(config.internal_dim, config.embedding_dim),
+            nn.Dropout(config.dropout)
         )
 
-        self.norm1 = nn.LayerNorm(embedding_dim)
-        self.norm2 = nn.LayerNorm(embedding_dim)
+        self.norm1 = nn.LayerNorm(config.embedding_dim)
+        self.norm2 = nn.LayerNorm(config.embedding_dim)
 
     def forward(self, x):
 
@@ -68,7 +82,7 @@ class DecoderBlock(nn.Module):
         return x
 
 class GPT(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, block_size, n_layers, internal_dim, n_heads, dropout=0.1):
+    def __init__(self, config):
         super().__init__()
         '''
         Components of gpt
@@ -79,22 +93,23 @@ class GPT(nn.Module):
         layer_norm
         '''
 
-        self.token_embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.pos_embedding = nn.Embedding(block_size, embedding_dim)
+        self.token_embedding = nn.Embedding(config.vocab_size, config.embedding_dim)
+        self.pos_embedding = nn.Embedding(config.block_size, config.embedding_dim)
 
         self.layers = nn.Sequential(
-            *(DecoderBlock(block_size, embedding_dim, internal_dim, n_heads, dropout) for _ in range(n_layers))
+            *(DecoderBlock(config) for _ in range(config.n_layers))
         )
 
-        self.output_head = nn.Linear(embedding_dim, vocab_size)
+        self.output_head = nn.Linear(config.embedding_dim, config.vocab_size)
 
-        self.layer_norm = nn.LayerNorm(embedding_dim)
+        self.layer_norm = nn.LayerNorm(config.embedding_dim)
 
-        self.block_size = block_size
+        self.block_size = config.block_size
+        self.config = config
 
     def forward(self, x):
         x_embed = self.token_embedding(x)
-        pos = torch.arange(0, x.size()[1], device=device, dtype=torch.long).unsqueeze(0)
+        pos = torch.arange(0, x.size()[1], device=self.config.device, dtype=torch.long).unsqueeze(0)
         pos_embed = self.pos_embedding(pos)
         x_rep = x_embed + pos_embed
 
@@ -112,7 +127,7 @@ class GPT(nn.Module):
         add to context and feed into network again
         '''
 
-        context = torch.tensor(context, dtype=torch.long, device=device).unsqueeze(0)
+        context = torch.tensor(context, dtype=torch.long, device=self.config.device).unsqueeze(0)
 
         for i in range(max_tokens):
             idx = context[:, -1*self.block_size:]
