@@ -1,0 +1,6 @@
+*.sw[op]
+*.bin
+input.txt
+*.pkl
+__pycache__
+*.pt
