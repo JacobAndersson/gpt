@@ -6,6 +6,7 @@ import pickle
 import math
 import fire
 from dataclasses import dataclass
+import wandb
 
 @dataclass
 class BatchConfig:
@@ -25,7 +26,6 @@ def get_batch(data, config):
     return x,y
 
 def test(model, test_idx, batch_config):
-    
     total_loss = 0.0
     counter = 0
 
@@ -34,7 +34,7 @@ def test(model, test_idx, batch_config):
 
         y_pred = model(x)
         y_pred = y_pred.view(-1, y_pred.size(-1))
-        loss = criterion(y_pred, y.view(-1))
+        loss = nn.functional.cross_entropy(y_pred, y.view(-1))
         total_loss += loss.item()
         counter += 1
 
@@ -55,6 +55,7 @@ def main(
     max_iterations = 60000,
     testing_interval = 1000,
     dropout = 0.1,
+    use_wandb=False
 ):
     internal_dim = 4*embedding_dim
 
@@ -102,6 +103,10 @@ def main(
     model.to(device)
     print(model)
 
+    if use_wandb:
+        print('Using wandb')
+        wandb.init()
+
     prompt = 'hello thy'
     prompt_tokens = [char2idx[c] for c in prompt]
 
@@ -124,6 +129,9 @@ def main(
         loss = criterion(y_pred, y.view(-1))
 
         print("IDX: {}, loss: {}, lr: {}".format(counter, loss.item(), lr))
+        if use_wandb:
+            wandb.log({ 'loss': loss.item(), "lr": lr })
+
         loss.backward()
         optimizer.step()
 
@@ -131,9 +139,11 @@ def main(
             checkpoint = model.state_dict()
 
             model.eval()
-            test_loss = test(model, test_idx, batch_config)
+            test_loss = test(model, val_idx, batch_config)
             model.train()
             print('test loss', test_loss)
+            if use_wandb:
+                wandb.log({ "test_loss": test_loss })
 
             if test_loss < best_loss:
                 print('Improved best loss. Saving checkpoint')

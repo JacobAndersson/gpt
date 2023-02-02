@@ -4,3 +4,4 @@ input.txt
 *.pkl
 __pycache__
 *.pt
+wandb
