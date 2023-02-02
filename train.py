@@ -7,6 +7,7 @@ import math
 import fire
 from dataclasses import dataclass
 import wandb
+import tiktoken
 
 @dataclass
 class BatchConfig:
@@ -55,16 +56,31 @@ def main(
     max_iterations = 60000,
     testing_interval = 1000,
     dropout = 0.1,
-    use_wandb=False
+    use_wandb=False,
+    dataset='shakespeare'
 ):
     internal_dim = 4*embedding_dim
 
-    with open('meta.pkl', 'rb') as f:
-        pkl = pickle.load(f)
-        vocab_size = pkl['size']
-        char2idx = pkl['cti']
-        idx2char = pkl['itc']
+    if dataset=='shakespeare':
+        with open('meta.pkl', 'rb') as f:
+            pkl = pickle.load(f)
+            vocab_size = pkl['size']
+            char2idx = pkl['cti']
+            idx2char = pkl['itc']
+    else:
+        #encoded with tiktoken gpt2 tokenizer
+        vocab_size=50257
+        tokenizer = tiktoken.get_encoding('gpt2')
 
+    def encode(text):
+        if dataset=='shakespeare':
+            return [char2idx[c] for c in text]
+        return tokenizer.encode_ordinary(text)
+
+    def decode(tokens):
+        if dataset == 'shakespeare':
+            return [idx2char[i] for i in tokens]
+        return tokenizer.decode(tokens)
 
     train_idx = np.memmap('train.bin', dtype=np.uint16)
     val_idx = np.memmap('test.bin', dtype=np.uint16)
@@ -108,8 +124,8 @@ def main(
         wandb.init()
 
     prompt = 'hello thy'
-    prompt_tokens = [char2idx[c] for c in prompt]
-
+    prompt_tokens = encode(prompt)
+    
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -150,7 +166,8 @@ def main(
                 best_loss = test_loss
                 torch.save(checkpoint, 'checkpoint.pt')
 
-            out = model.generate(prompt_tokens, 100, char2idx, idx2char)
+            out_tokens = model.generate(prompt_tokens, 100)
+            out = decode(out_tokens)
             print(out)
 
         counter += 1

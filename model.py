@@ -118,7 +118,7 @@ class GPT(nn.Module):
 
         return x
     
-    def generate(self, context, max_tokens, char2idx, idx2char):
+    def generate(self, context, max_tokens):
         '''
         steps:
         convert context to idx tokens
@@ -142,5 +142,4 @@ class GPT(nn.Module):
 
             idx_list = context[0].cpu().tolist()
         
-        out = "".join([idx2char[c] for c in idx_list])
-        return out
+        return idx_list
