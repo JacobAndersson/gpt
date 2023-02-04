@@ -49,11 +49,11 @@ def main(
     n_layers = 10,
     embedding_dim = 768,
     n_heads = 8,
-    learning_rate = 6e-5,
-    min_learning_rate = 6e-6,
+    learning_rate = 5e-6,
+    min_learning_rate = 6e-7,
     warmup_iterations = 2000,
     decay_iterations = 60000,
-    max_iterations = 60000,
+    max_iterations = 100000,
     testing_interval = 1000,
     dropout = 0.1,
     use_wandb=False,
@@ -152,6 +152,7 @@ def main(
         optimizer.step()
 
         if counter and counter%testing_interval== 0:
+            optimizer.zero_grad()
             checkpoint = model.state_dict()
 
             model.eval()
