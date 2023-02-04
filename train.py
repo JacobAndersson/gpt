@@ -46,6 +46,7 @@ def test(model, test_idx, batch_config):
 def main(
     device = 'cuda',
     batch_size = 64,
+    micro_batch_steps = 1,
     block_size = 64,
     num_epochs = 16,
     n_layers = 10,
@@ -130,7 +131,9 @@ def main(
     prompt_tokens = encode(prompt)
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    #betas, eps and weightdecay from Cramming paper
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.98), weight_decay=0.01, eps=1e-12)
 
     counter = 0
     best_loss = float('inf')
@@ -145,14 +148,18 @@ def main(
             param['lr'] = lr
 
         t0 = time.time()
-        x, y = get_batch(train_idx, batch_config)
-        optimizer.zero_grad()
-        y_pred = model(x)
-        y_pred = y_pred.view(-1, y_pred.size(-1))
-        loss = criterion(y_pred, y.view(-1))
 
-        loss.backward()
+        for _ in range(micro_batch_steps):
+            x, y = get_batch(train_idx, batch_config)
+            print(x, y)
+            y_pred = model(x)
+            y_pred = y_pred.view(-1, y_pred.size(-1))
+            loss = criterion(y_pred, y.view(-1))
+            loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
         optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
 
         t1 = time.time()
         elapsed = round((t1-t0), 3)
@@ -163,9 +170,6 @@ def main(
 
 
         if counter and counter%testing_interval== 0:
-            optimizer.zero_grad()
-            
-
             model.eval()
             test_loss = test(model, val_idx, batch_config)
             model.train()
