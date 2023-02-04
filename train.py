@@ -8,6 +8,7 @@ import fire
 from dataclasses import dataclass
 import wandb
 import tiktoken
+import time
 
 @dataclass
 class BatchConfig:
@@ -27,19 +28,20 @@ def get_batch(data, config):
     return x,y
 
 def test(model, test_idx, batch_config):
-    total_loss = 0.0
-    counter = 0
+    with torch.no_grad():
+        total_loss = 0.0
+        counter = 0
 
-    for i in range(200):
-        x, y = get_batch(test_idx, batch_config)
+        for i in range(200):
+            x, y = get_batch(test_idx, batch_config)
 
-        y_pred = model(x)
-        y_pred = y_pred.view(-1, y_pred.size(-1))
-        loss = nn.functional.cross_entropy(y_pred, y.view(-1))
-        total_loss += loss.item()
-        counter += 1
+            y_pred = model(x)
+            y_pred = y_pred.view(-1, y_pred.size(-1))
+            loss = nn.functional.cross_entropy(y_pred, y.view(-1))
+            total_loss += loss.item()
+            counter += 1
 
-    return total_loss/counter
+        return total_loss/counter
 
 def main(
     device = 'cuda',
@@ -49,15 +51,16 @@ def main(
     n_layers = 10,
     embedding_dim = 768,
     n_heads = 8,
-    learning_rate = 5e-6,
-    min_learning_rate = 6e-7,
+    learning_rate = 6e-5,
+    min_learning_rate = 6e-6,
     warmup_iterations = 2000,
     decay_iterations = 60000,
     max_iterations = 100000,
     testing_interval = 1000,
     dropout = 0.1,
     use_wandb=False,
-    dataset='shakespeare'
+    dataset='shakespeare',
+    lr_schedule = True,
 ):
     internal_dim = 4*embedding_dim
 
@@ -133,37 +136,50 @@ def main(
     best_loss = float('inf')
 
     while counter < max_iterations:
-        lr = get_learning_rate(counter)
-            
+        if lr_schedule:
+            lr = get_learning_rate(counter)
+        else:
+            lr = learning_rate
+                
         for param in optimizer.param_groups:
             param['lr'] = lr
 
+        t0 = time.time()
         x, y = get_batch(train_idx, batch_config)
         optimizer.zero_grad()
         y_pred = model(x)
         y_pred = y_pred.view(-1, y_pred.size(-1))
         loss = criterion(y_pred, y.view(-1))
 
-        print("IDX: {}, loss: {}, lr: {}".format(counter, loss.item(), lr))
-        if use_wandb:
-            wandb.log({ 'loss': loss.item(), "lr": lr })
-
         loss.backward()
         optimizer.step()
 
+        t1 = time.time()
+        elapsed = round((t1-t0), 3)
+
+        print("IDX: {}, loss: {}, lr: {}, batch took: {}s".format(counter, loss.item(), lr, elapsed))
+        if use_wandb:
+            wandb.log({ 'loss': loss.item(), "lr": lr })
+
+
         if counter and counter%testing_interval== 0:
             optimizer.zero_grad()
-            checkpoint = model.state_dict()
+            
 
             model.eval()
             test_loss = test(model, val_idx, batch_config)
             model.train()
-            print('test loss', test_loss)
+            print('Test loss', test_loss)
             if use_wandb:
                 wandb.log({ "test_loss": test_loss })
 
             if test_loss < best_loss:
                 print('Improved best loss. Saving checkpoint')
+                checkpoint = {
+                    "model": model.state_dict(),
+                    "lr": learning_rate,
+                    "iter": counter,
+                }
                 best_loss = test_loss
                 torch.save(checkpoint, 'checkpoint.pt')
 
