@@ -9,7 +9,12 @@ from dataclasses import dataclass, asdict
 import wandb
 import tiktoken
 import time
+
 torch.manual_seed(42)
+
+#Apperntly this makes things go a bit faster
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 @dataclass
 class BatchConfig:
@@ -131,7 +136,7 @@ def main(
         print('Using wandb')
         wandb.init(config={**asdict(config), **asdict(batch_config)})
 
-    prompt = 'hello thy'
+    prompt = 'Hello what is'
     prompt_tokens = encode(prompt)
     
     criterion = nn.CrossEntropyLoss()
@@ -171,6 +176,14 @@ def main(
         if use_wandb:
             wandb.log({ 'loss': loss.item(), "lr": lr })
 
+        if counter%200 == 0:
+            print('saving latest checkpoint')
+            checkpoint = {
+                "model": model.state_dict(),
+                "lr": learning_rate,
+                "iter": counter,
+            }
+            torch.save(checkpoint, 'latest.pt')
 
         if counter and counter%testing_interval== 0:
             model.eval()
@@ -188,9 +201,9 @@ def main(
                     "iter": counter,
                 }
                 best_loss = test_loss
-                torch.save(checkpoint, 'checkpoint.pt')
+                torch.save(checkpoint, 'best.pt')
 
-            out_tokens = model.generate(prompt_tokens, 100)
+            out_tokens = model.generate(prompt_tokens, 25)
             out = decode(out_tokens)
             print(out)
 

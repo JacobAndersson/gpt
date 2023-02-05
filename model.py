@@ -116,6 +116,7 @@ class GPT(nn.Module):
 
         #weight tying
         self.token_embedding.weight = self.output_head.weight
+        self.apply(self._init_weights)
 
     def forward(self, input):
         pos = torch.arange(0, input.size()[1], device=self.config.device, dtype=torch.long).unsqueeze(0)
@@ -160,3 +161,19 @@ class GPT(nn.Module):
 
         total -= np.prod(self.pos_embedding.weight.size())
         return total
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            #torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            module.weight.data.normal_(mean=0.0, std=0.02)
+            if module.bias is not None:
+                #torch.nn.init.zeros_(module.bias)
+                module.bias.data.fill_(0.0)
+        elif isinstance(module, nn.Embedding):
+            #torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            module.weight.data.normal_(mean=0.0, std=0.02)
+        elif isinstance(module, nn.LayerNorm):
+            #torch.nn.init.fill_(1.0, module.weight)
+            module.weight.data.fill_(1.0)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
