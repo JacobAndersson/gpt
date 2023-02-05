@@ -5,10 +5,11 @@ from model import GPT, ModelConfig
 import pickle
 import math
 import fire
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import wandb
 import tiktoken
 import time
+torch.manual_seed(42)
 
 @dataclass
 class BatchConfig:
@@ -18,9 +19,8 @@ class BatchConfig:
 
 def get_batch(data, config):
     rand = torch.randint(low=0, high=len(data) - config.block_size, size=(config.batch_size,))
-
-    x = torch.stack([torch.from_numpy((data[x: x+config.block_size]).astype(np.int64)) for x in rand])
-    y = torch.stack([torch.from_numpy((data[x+1: x+config.block_size+1]).astype(np.int64)) for x in rand])
+    x = torch.stack([torch.from_numpy((data[i: i+config.block_size]).astype(np.int64)) for i in rand])
+    y = torch.stack([torch.from_numpy((data[i+1: i+config.block_size+1]).astype(np.int64)) for i in rand])
 
     x = x.to(config.device)
     y = y.to(config.device)
@@ -56,12 +56,13 @@ def main(
     min_learning_rate = 6e-6,
     warmup_iterations = 2000,
     decay_iterations = 60000,
-    max_iterations = 100000,
+    max_iterations = 60000,
     testing_interval = 1000,
     dropout = 0.1,
     use_wandb=False,
     dataset='shakespeare',
     lr_schedule = True,
+    bias = False,
 ):
     internal_dim = 4*embedding_dim
 
@@ -97,7 +98,8 @@ def main(
         internal_dim,
         n_heads,
         dropout,
-        device
+        device,
+        bias,
     )
     print(config)
 
@@ -120,12 +122,14 @@ def main(
 
 
     model = GPT(config)
+    num_params = model.num_params()
+    print('num parameter {}M'.format(round(num_params/1_000_000, 2)))
     model.to(device)
     print(model)
 
     if use_wandb:
         print('Using wandb')
-        wandb.init()
+        wandb.init(config={**asdict(config), **asdict(batch_config)})
 
     prompt = 'hello thy'
     prompt_tokens = encode(prompt)
@@ -133,7 +137,7 @@ def main(
     criterion = nn.CrossEntropyLoss()
 
     #betas, eps and weightdecay from Cramming paper
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.98), weight_decay=0.01, eps=1e-12)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, betas=(0.9, 0.95), weight_decay=0.1, eps=1e-12)
 
     counter = 0
     best_loss = float('inf')
@@ -151,13 +155,12 @@ def main(
 
         for _ in range(micro_batch_steps):
             x, y = get_batch(train_idx, batch_config)
-            print(x, y)
             y_pred = model(x)
             y_pred = y_pred.view(-1, y_pred.size(-1))
             loss = criterion(y_pred, y.view(-1))
             loss.backward()
 
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
 

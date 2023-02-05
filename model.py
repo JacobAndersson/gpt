@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from dataclasses import dataclass
+import numpy as np
 
 @dataclass
 class ModelConfig:
@@ -14,6 +15,7 @@ class ModelConfig:
     n_heads: int
     dropout: int = 0.1
     device: str = 'cuda'
+    bias: bool = True
 
 class SelfAttention(nn.Module):
     def __init__(self, config):
@@ -23,15 +25,18 @@ class SelfAttention(nn.Module):
         block_size = config.block_size
         n_heads = config.n_heads
 
-        self.k = nn.Linear(embedding_dim, embedding_dim)
-        self.q = nn.Linear(embedding_dim, embedding_dim)
-        self.v = nn.Linear(embedding_dim, embedding_dim)
+        self.k = nn.Linear(embedding_dim, embedding_dim, bias=config.bias)
+        self.q = nn.Linear(embedding_dim, embedding_dim, bias=config.bias)
+        self.v = nn.Linear(embedding_dim, embedding_dim, bias=config.bias)
 
         self.register_buffer("bias", torch.tril(torch.ones(block_size, block_size))
                                     .view(1, 1, block_size, block_size))
 
         #output projection
-        self.w = nn.Linear(embedding_dim, embedding_dim)
+        self.w = nn.Linear(embedding_dim, embedding_dim, bias=config.bias)
+
+        self.attention_dropout = nn.Dropout(config.dropout)
+        self.output_dropout = nn.Dropout(config.dropout)
 
         self.n_heads = n_heads
         self.dim = embedding_dim
@@ -47,9 +52,10 @@ class SelfAttention(nn.Module):
         attention = attention.masked_fill(self.bias[:, :, :T, :T]==0, float('-inf'))
         attention = F.softmax(attention, dim=-1)
         attention = attention@value
+        attention = self.attention_dropout(attention)
         y = attention.transpose(1,2).contiguous().view(B, T, C)
 
-        y = self.w(y)
+        y = self.output_dropout(self.w(y))
 
         return y
         
@@ -78,7 +84,7 @@ class DecoderBlock(nn.Module):
     def forward(self, x):
 
         x = x + self.attention(self.norm1(x))
-        x = x = self.mlp(self.norm2(x))
+        x = x + self.mlp(self.norm2(x))
         return x
 
 class GPT(nn.Module):
@@ -100,20 +106,22 @@ class GPT(nn.Module):
             *(DecoderBlock(config) for _ in range(config.n_layers))
         )
 
-        self.output_head = nn.Linear(config.embedding_dim, config.vocab_size)
+        self.output_head = nn.Linear(config.embedding_dim, config.vocab_size, bias=config.bias)
 
         self.layer_norm = nn.LayerNorm(config.embedding_dim)
 
         self.block_size = config.block_size
         self.config = config
 
-    def forward(self, x):
-        x_embed = self.token_embedding(x)
-        pos = torch.arange(0, x.size()[1], device=self.config.device, dtype=torch.long).unsqueeze(0)
-        pos_embed = self.pos_embedding(pos)
-        x_rep = x_embed + pos_embed
 
-        x = self.layers(x_rep)
+        #weight tying
+        self.token_embedding.weight = self.output_head.weight
+
+    def forward(self, input):
+        pos = torch.arange(0, input.size()[1], device=self.config.device, dtype=torch.long).unsqueeze(0)
+
+        x = self.pos_embedding(pos) + self.token_embedding(input)
+        x = self.layers(x)
         x = self.output_head(x)
 
         return x
@@ -140,6 +148,15 @@ class GPT(nn.Module):
 
             context = torch.cat((context, pred_idx), dim=1)
 
-            idx_list = context[0].cpu().tolist()
+        idx_list = context[0].cpu().tolist()
         
         return idx_list
+    
+    def num_params(self):
+        total = 0
+        for param in self.parameters():
+            if (param.requires_grad):
+                total += np.prod(param.size())
+
+        total -= np.prod(self.pos_embedding.weight.size())
+        return total
