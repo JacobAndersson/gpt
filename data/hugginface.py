@@ -14,14 +14,22 @@ def encode(row):
 
     return {'tokens': tokens, 'len': len(tokens) }
 
-data = datasets.load_dataset('wikitext', 'wikitext-2-v1')
+#data = datasets.load_dataset('wikitext', 'wikitext-2-v1')
+data = datasets.load_dataset('openwebtext', cache_dir='/mnt/storage/openwebtext')
 
-train_data = data['train'].filter(lambda x: len(x['text']) > 0)
-test_data = data['test'].filter(lambda x: len(x['text']) > 0)
-print(train_data)
+if 'test' in data:
+    train_data = data['train']
+    test_data = data['test']
+else: 
+    split_dataset = data["train"].train_test_split(test_size=0.0005, shuffle=True)
+    train_data = split_dataset['train']
+    test_data = split_dataset['test']
 
-processsed_train = train_data.map(encode, remove_columns=['text'])
-processed_test = test_data.map(encode, remove_columns=['text'])
+train_data = train_data
+test_data = test_data
+
+processsed_train = train_data.map(encode, remove_columns=['text'], num_proc=4)
+processed_test = test_data.map(encode, remove_columns=['text'], num_proc=4)
 
 def save(data, split):
     data_length = sum(map(lambda x: x['len'], data))

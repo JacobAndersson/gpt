@@ -1,0 +1,19 @@
+python3 train.py \
+  --dataset="openwebtext" \
+  --device="cuda:0" \
+  --n_layers=24 \
+  --block_size=1024 \
+  --n_heads=12 \
+  --embedding_dim=768 \
+  --learning_rate=6e-4 \
+  --min_learning_rate=6e-5 \
+  --dropout=0.0 \
+  --warmup_iterations=2000 \
+  --micro_batch_steps=5 \
+  --batch_size=4 \
+  --max-iterations=60000 \
+  --decay_iterations=60000 \
+  --testing_interval=500 \
+  --use_wandb=True \
+  --lr_schedule=True \
+  --bias=False
