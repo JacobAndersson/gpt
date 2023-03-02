@@ -128,14 +128,6 @@ class GPT(nn.Module):
         return x
     
     def generate(self, context, max_tokens):
-        '''
-        steps:
-        convert context to idx tokens
-        feed in to model
-        get prediction of last token
-        add to context and feed into network again
-        '''
-
         context = torch.tensor(context, dtype=torch.long, device=self.config.device).unsqueeze(0)
 
         for i in range(max_tokens):
@@ -164,16 +156,12 @@ class GPT(nn.Module):
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
-            #torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             module.weight.data.normal_(mean=0.0, std=0.02)
             if module.bias is not None:
-                #torch.nn.init.zeros_(module.bias)
                 module.bias.data.fill_(0.0)
         elif isinstance(module, nn.Embedding):
-            #torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             module.weight.data.normal_(mean=0.0, std=0.02)
         elif isinstance(module, nn.LayerNorm):
-            #torch.nn.init.fill_(1.0, module.weight)
             module.weight.data.fill_(1.0)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)

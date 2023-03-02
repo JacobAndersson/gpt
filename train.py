@@ -79,7 +79,8 @@ def main(
             idx2char = pkl['itc']
     else:
         #encoded with tiktoken gpt2 tokenizer
-        vocab_size=50257
+        #vocab_size=50257
+        vocab_size=50304
         tokenizer = tiktoken.get_encoding('gpt2')
 
     def encode(text):
@@ -130,7 +131,6 @@ def main(
     num_params = model.num_params()
     print('num parameter {}M'.format(round(num_params/1_000_000, 2)))
     model.to(device)
-    print(model)
 
     if use_wandb:
         print('Using wandb')
@@ -182,6 +182,7 @@ def main(
                 "model": model.state_dict(),
                 "lr": learning_rate,
                 "iter": counter,
+                "model_config": asdict(config),
             }
             torch.save(checkpoint, 'latest.pt')
 
@@ -199,6 +200,7 @@ def main(
                     "model": model.state_dict(),
                     "lr": learning_rate,
                     "iter": counter,
+                    "model_config": asdict(config),
                 }
                 best_loss = test_loss
                 torch.save(checkpoint, 'best.pt')
